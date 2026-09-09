@@ -1,144 +1,222 @@
-import { geminiService } from "../services/geminiService.js";
-import { bookTools } from "../tools/bookTools.js";
 import {
-  AgentResult,
-  Book,
-} from "../types/agent.types.js";
+  getGeminiFunctionCall,
+  generateNaturalLanguageResponse,
+} from "./geminiToolService.js";
 
-const createBookSummary = (book: any): string => {
-  const data = book?.data || book;
+import {
+  executeGeminiTool,
+} from "./apiToolExecutor.js";
 
-  const rentPrice = data.rentalPricePerDay;
-  const weekPrice = data.rentalPricePerWeek;
-  const monthPrice = data.rentalPricePerMonth;
-
-  const rentText =
-    data.availableForRent === true
-      ? `Available for rent at ${rentPrice}/day`
-      : "Not available for rent";
-
-  const saleText =
-    data.availableForSale === true
-      ? `Available for sale at ${data.purchasePrice}`
-      : "Not available for sale";
-
-  return [
-    `Book: ${data.name}`,
-    `Author: ${data.author || "Unknown"}`,
-    `Language: ${data.language || "Unknown"}`,
-    `Condition: ${data.condition || "Unknown"}`,
-    `Rental: ${rentText}`,
-    `Weekly rental: ${weekPrice ?? "N/A"}`,
-    `Monthly rental: ${monthPrice ?? "N/A"}`,
-    `Sale: ${saleText}`,
-    `Availability: ${data.availabilityStatus || "Unknown"}`,
-  ].join("\n");
-};
 
 export const agentService = {
-  async processMessage(message: string) {
+
+  async processMessage(
+    message: string,
+    authorization?: string
+  ) {
+
     console.log(
       "User message received by Agent:",
       message
     );
 
-    // 1. Ask LLM to understand user request
-    const llmResponse =
-      await geminiService.understandMessage(message);
-
-    if (!llmResponse) {
-      return {
-        reply: "I could not understand your request.",
-        intent: "UNKNOWN",
-        data: null,
-      };
-    }
-
-    // 2. Parse LLM response
-    let aiResult: AgentResult;
+    console.log(
+      "Authorization received by Agent:",
+      authorization
+        ? "Token present"
+        : "No token"
+    );
 
     try {
-      aiResult = JSON.parse(llmResponse);
-    } catch (error) {
+
+      /*
+       * STEP 1
+       * Ask Gemini to select the API
+       */
+      const result =
+        await getGeminiFunctionCall(
+          message
+        );
+
+
+      const functionCall =
+        result.functionCall;
+
+      const functionCallPart =
+        result.functionCallPart;
+
+      const selectedTool =
+        result.selectedTool;
+
+
+      /*
+       * Gemini didn't select an API
+       */
+      if (
+        !functionCall ||
+        !functionCallPart ||
+        !selectedTool
+      ) {
+
+        console.log(
+          "Gemini did not select an API."
+        );
+
+        const parts =
+          result.response
+            ?.candidates?.[0]
+            ?.content?.parts || [];
+
+        const textPart =
+          parts.find(
+            (part: any) =>
+              part.text
+          );
+
+        return {
+          reply:
+            textPart?.text ||
+            "I could not understand your request.",
+
+          intent:
+            "UNKNOWN",
+
+          data:
+            null,
+        };
+      }
+
+
+      console.log(
+        "Selected API:",
+        functionCall.name
+      );
+
+      console.log(
+        "Tool arguments:",
+        functionCall.args
+      );
+
+      console.log(
+        "API definition:",
+        selectedTool._api
+      );
+
+
+      /*
+       * STEP 2
+       * Execute selected API through MCP
+       */
+      const toolResult =
+        await executeGeminiTool(
+          selectedTool,
+          functionCall.args || {},
+          authorization
+        );
+
+
+      console.log(
+        "API executed successfully."
+      );
+
+      console.log(
+        "Raw MCP result:",
+        JSON.stringify(
+          toolResult,
+          null,
+          2
+        )
+      );
+
+
+      /*
+       * STEP 3
+       * Parse MCP response
+       */
+      let parsedData: any =
+        toolResult;
+
+      try {
+
+        const firstContent =
+          toolResult?.content?.[0];
+
+        if (
+          firstContent &&
+          firstContent.type === "text"
+        ) {
+
+          const rawText =
+            firstContent.text;
+
+          if (rawText) {
+
+            parsedData =
+              JSON.parse(
+                rawText
+              );
+
+          }
+        }
+
+      } catch (parseError) {
+
+        console.error(
+          "Failed to parse MCP response:",
+          parseError
+        );
+
+        parsedData =
+          toolResult;
+      }
+
+
+      /*
+       * STEP 4
+       * Ask Gemini to convert raw API
+       * response into a useful response.
+       */
+      const userFriendlyResponse =
+        await generateNaturalLanguageResponse(
+          message,
+          parsedData
+        );
+
+
+      /*
+       * STEP 5
+       * Return response to frontend
+       */
+      return {
+
+        reply:
+          userFriendlyResponse,
+
+        intent:
+          functionCall.name,
+
+        data:
+          parsedData,
+      };
+
+    } catch (error: any) {
+
       console.error(
-        "Failed to parse Gemini response:",
+        "Agent service error:",
         error
       );
 
       return {
-        reply: "I could not understand your request.",
-        intent: "UNKNOWN",
-        data: null,
+
+        reply:
+          "Sorry, I was unable to process your request.",
+
+        intent:
+          "UNKNOWN",
+
+        data:
+          null,
       };
     }
-
-    const { intent, filters } = aiResult;
-
-    console.log("Detected intent:", intent);
-    console.log("Detected filters:", filters);
-
-    // 3. Get specific book details
-    if (
-      intent === "GET_BOOK_DETAILS" &&
-      filters?.name
-    ) {
-      console.log(
-        "Agent selected: GET_BOOK_DETAILS"
-      );
-
-      const book = await bookTools.findBookByName(
-        filters.name
-      );
-
-      if (!book) {
-        return {
-          reply: `I could not find a book named "${filters.name}".`,
-          intent,
-          data: null,
-        };
-      }
-
-      return {
-        reply: createBookSummary(book),
-        intent,
-        data: book,
-      };
-    }
-
-    // 4. Search books using dynamic filters
-    if (intent === "SEARCH_BOOKS") {
-      console.log(
-        "Agent selected: SEARCH_BOOKS"
-      );
-
-      const books = await bookTools.searchBooks(
-        filters
-      );
-
-      if (books.length === 0) {
-        return {
-          reply:
-            "I could not find any books matching those criteria.",
-          intent,
-          data: [],
-        };
-      }
-
-      return {
-        reply: `I found ${books.length} matching book${
-          books.length > 1 ? "s" : ""
-        }.`,
-        intent,
-        data: books,
-      };
-    }
-
-    // 5. Unsupported request
-    return {
-      reply:
-        "I can currently help you search for books and get book details.",
-      intent: "UNKNOWN",
-      data: null,
-    };
   },
 };

@@ -13,13 +13,27 @@ export const agentController = {
         });
       }
 
+      // Get Authorization header from frontend
+      const authorization = req.headers.authorization;
+
+      console.log(
+        "Incoming Authorization:",
+        authorization
+          ? "Token present"
+          : "No token"
+      );
+
       const result =
-        await agentService.processMessage(message);
+        await agentService.processMessage(
+          message,
+          authorization
+        );
 
       return res.status(200).json({
         success: true,
         data: result,
       });
+
     } catch (error: any) {
       console.error(
         "Agent chat error:",
@@ -30,7 +44,7 @@ export const agentController = {
         success: false,
         message:
           error.message ||
-          "Failed to process message",
+          "Failed to process request",
       });
     }
   },

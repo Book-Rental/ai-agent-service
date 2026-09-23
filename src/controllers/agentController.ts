@@ -4,7 +4,7 @@ import { agentService } from "../services/agentService.js";
 export const agentController = {
   async chat(req: Request, res: Response) {
     try {
-      const { message } = req.body;
+      const { message, userId } = req.body;
 
       if (!message || typeof message !== "string") {
         return res.status(400).json({
@@ -13,7 +13,12 @@ export const agentController = {
         });
       }
 
-      // Get Authorization header from frontend
+      console.log(
+        "AI Agent Controller - userId:",
+        userId || "NOT PROVIDED"
+      );
+
+      // Get Authorization header from backend proxy
       const authorization = req.headers.authorization;
 
       console.log(
@@ -26,7 +31,8 @@ export const agentController = {
       const result =
         await agentService.processMessage(
           message,
-          authorization
+          authorization,
+          userId
         );
 
       return res.status(200).json({

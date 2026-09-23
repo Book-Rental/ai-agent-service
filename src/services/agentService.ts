@@ -12,30 +12,45 @@ export const agentService = {
 
   async processMessage(
     message: string,
-    authorization?: string
+    authorization?: string,
+    userId?: string
   ) {
 
     console.log(
-      "User message received by Agent:",
+      "\n\n=========================================="
+    );
+
+    console.log(
+      "🚀 AI AGENT REQUEST"
+    );
+
+    console.log(
+      "User message:",
       message
     );
 
     console.log(
-      "Authorization received by Agent:",
+      "Authorization:",
       authorization
         ? "Token present"
         : "No token"
     );
 
+    console.log(
+      "Authenticated userId:",
+      userId || "NOT PROVIDED"
+    );
+
+    console.log(
+      "=========================================="
+    );
+
     try {
 
-      /*
-       * STEP 1
-       * Ask Gemini to select the API
-       */
       const result =
         await getGeminiFunctionCall(
-          message
+          message,
+          userId
         );
 
 
@@ -50,8 +65,18 @@ export const agentService = {
 
 
       /*
-       * Gemini didn't select an API
+       * ==================================================
+       * CASE 1
+       *
+       * Gemini answered directly.
+       *
+       * No API.
+       * No MCP.
+       * No backend.
+       * No authentication required.
+       * ==================================================
        */
+
       if (
         !functionCall ||
         !functionCallPart ||
@@ -59,33 +84,44 @@ export const agentService = {
       ) {
 
         console.log(
-          "Gemini did not select an API."
+          "\n🧠 GENERAL LLM RESPONSE"
         );
 
-        const parts =
-          result.response
-            ?.candidates?.[0]
-            ?.content?.parts || [];
+        console.log(
+          "Gemini answered without backend API."
+        );
 
-        const textPart =
-          parts.find(
-            (part: any) =>
-              part.text
-          );
+
+        const directResponse =
+          result.directResponse;
+
 
         return {
+
           reply:
-            textPart?.text ||
-            "I could not understand your request.",
+            directResponse,
 
           intent:
-            "UNKNOWN",
+            "GENERAL",
 
           data:
             null,
+
         };
       }
 
+
+      /*
+       * ==================================================
+       * CASE 2
+       *
+       * Gemini selected backend API.
+       * ==================================================
+       */
+
+      console.log(
+        "\n🔧 BACKEND API FLOW"
+      );
 
       console.log(
         "Selected API:",
@@ -104,20 +140,29 @@ export const agentService = {
 
 
       /*
+       * ==================================================
        * STEP 2
-       * Execute selected API through MCP
+       *
+       * Execute API through MCP
+       * ==================================================
        */
+
       const toolResult =
         await executeGeminiTool(
+
           selectedTool,
+
           functionCall.args || {},
+
           authorization
+
         );
 
 
       console.log(
-        "API executed successfully."
+        "\n✅ Backend API executed successfully."
       );
+
 
       console.log(
         "Raw MCP result:",
@@ -130,16 +175,22 @@ export const agentService = {
 
 
       /*
+       * ==================================================
        * STEP 3
+       *
        * Parse MCP response
+       * ==================================================
        */
+
       let parsedData: any =
         toolResult;
+
 
       try {
 
         const firstContent =
           toolResult?.content?.[0];
+
 
         if (
           firstContent &&
@@ -149,6 +200,7 @@ export const agentService = {
           const rawText =
             firstContent.text;
 
+
           if (rawText) {
 
             parsedData =
@@ -157,6 +209,7 @@ export const agentService = {
               );
 
           }
+
         }
 
       } catch (parseError) {
@@ -172,21 +225,39 @@ export const agentService = {
 
 
       /*
+       * ==================================================
        * STEP 4
-       * Ask Gemini to convert raw API
-       * response into a useful response.
+       *
+       * Send backend response to Gemini.
+       *
+       * Gemini converts API data into a
+       * user-friendly response.
+       * ==================================================
        */
+
       const userFriendlyResponse =
         await generateNaturalLanguageResponse(
+
           message,
+
           parsedData
+
         );
 
 
       /*
+       * ==================================================
        * STEP 5
-       * Return response to frontend
+       *
+       * Return response to frontend.
+       * ==================================================
        */
+
+      console.log(
+        "\n✅ AI AGENT REQUEST COMPLETED"
+      );
+
+
       return {
 
         reply:
@@ -197,7 +268,9 @@ export const agentService = {
 
         data:
           parsedData,
+
       };
+
 
     } catch (error: any) {
 
@@ -205,6 +278,7 @@ export const agentService = {
         "Agent service error:",
         error
       );
+
 
       return {
 
@@ -216,6 +290,7 @@ export const agentService = {
 
         data:
           null,
+
       };
     }
   },

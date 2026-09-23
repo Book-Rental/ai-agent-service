@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "npm install --include=dev && tsc && copyfiles -u 1 src/templates/**/*.hbs dist",
+    "build": "npm install --include=dev && tsc ",
    "start": "node dist/server.js"
   },
   "keywords": [],

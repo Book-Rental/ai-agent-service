@@ -100,28 +100,32 @@ export const getGeminiApiTools = async () => {
                     }
                 }
             }
-
+const description = [
+    operation.summary,
+    operation.description,
+    `HTTP Method: ${method.toUpperCase()}`,
+    `API Path: ${path}`,
+]
+    .filter(Boolean)
+    .join(". ");
             tools.push({
-                name: operationId,
+    name: operationId,
 
-                description:
-                    operation.summary ||
-                    operation.description ||
-                    `${method.toUpperCase()} ${path}`,
+    description,
 
-                parameters: {
-                    type: "object",
-                    properties,
-                    required,
-                },
+    parameters: {
+        type: "object",
+        properties,
+        required,
+    },
 
-                _api: {
-                    method:
-                        method.toUpperCase(),
+    _api: {
+        method:
+            method.toUpperCase(),
 
-                    path,
-                },
-            });
+        path,
+    },
+});
         }
     }
 

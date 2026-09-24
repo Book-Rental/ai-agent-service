@@ -45,7 +45,17 @@ export const agentService = {
       "=========================================="
     );
 
+
     try {
+
+      /*
+       * ==================================================
+       * STEP 1
+       *
+       * Ask Gemini to understand the user's request
+       * and select the appropriate backend API.
+       * ==================================================
+       */
 
       const result =
         await getGeminiFunctionCall(
@@ -73,7 +83,6 @@ export const agentService = {
        * No API.
        * No MCP.
        * No backend.
-       * No authentication required.
        * ==================================================
        */
 
@@ -92,14 +101,10 @@ export const agentService = {
         );
 
 
-        const directResponse =
-          result.directResponse;
-
-
         return {
 
           reply:
-            directResponse,
+            result.directResponse,
 
           intent:
             "GENERAL",
@@ -115,7 +120,7 @@ export const agentService = {
        * ==================================================
        * CASE 2
        *
-       * Gemini selected backend API.
+       * Gemini selected a backend API.
        * ==================================================
        */
 
@@ -143,7 +148,11 @@ export const agentService = {
        * ==================================================
        * STEP 2
        *
-       * Execute API through MCP
+       * Execute API through MCP.
+       *
+       * The Authorization header is forwarded so that
+       * protected APIs such as /api/order/me can
+       * authenticate the logged-in user.
        * ==================================================
        */
 
@@ -160,7 +169,7 @@ export const agentService = {
 
 
       console.log(
-        "\n✅ Backend API executed successfully."
+        "\n✅ Backend API executed."
       );
 
 
@@ -178,7 +187,7 @@ export const agentService = {
        * ==================================================
        * STEP 3
        *
-       * Parse MCP response
+       * Parse MCP response.
        * ==================================================
        */
 
@@ -209,7 +218,6 @@ export const agentService = {
               );
 
           }
-
         }
 
       } catch (parseError) {
@@ -228,10 +236,15 @@ export const agentService = {
        * ==================================================
        * STEP 4
        *
-       * Send backend response to Gemini.
+       * Check whether the backend returned an error.
        *
-       * Gemini converts API data into a
-       * user-friendly response.
+       * IMPORTANT:
+       *
+       * We do NOT hard-code the final user message here.
+       *
+       * Instead, we send the backend result to Gemini.
+       * Gemini converts the authentication error into
+       * natural user-friendly language.
        * ==================================================
        */
 
@@ -279,6 +292,18 @@ export const agentService = {
         error
       );
 
+
+      /*
+       * IMPORTANT:
+       *
+       * Do not hide the original error completely.
+       *
+       * If Gemini itself fails or the MCP request fails,
+       * we return a generic technical-safe response.
+       *
+       * Backend authentication errors should ideally
+       * reach generateNaturalLanguageResponse() above.
+       */
 
       return {
 

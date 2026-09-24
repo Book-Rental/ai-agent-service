@@ -265,7 +265,25 @@ export const executeGeminiTool = async (
     parseMcpResult(
       firstResult
     );
+/*
+ * --------------------------------------------------
+ * Handle backend/API errors
+ * --------------------------------------------------
+ *
+ * Do not throw the error here.
+ * Return it to agentService so that
+ * generateNaturalLanguageResponse()
+ * can create the final user-friendly message.
+ */
 
+if (firstResult?.isError === true) {
+
+  console.log(
+    "Backend API returned an error."
+  );
+
+  return firstResult;
+}
   /*
    * --------------------------------------------------
    * 8. Check whether response is paginated

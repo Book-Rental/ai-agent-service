@@ -341,8 +341,14 @@ Do not explain the technical reason behind the restriction.
  * 1. Answer the user directly
  * 2. Select a backend API tool
  *
- * userId is received from the authenticated
- * request and is used for user-specific APIs.
+ * userId is optional.
+ *
+ * IMPORTANT:
+ * For "my orders", Gemini does NOT receive or
+ * pass the userId to the API.
+ *
+ * The backend identifies the logged-in user
+ * from the JWT authentication.
  * ==================================================
  */
 
@@ -351,6 +357,7 @@ export const getGeminiFunctionCall =
     message: string,
     userId?: string
   ) => {
+
     console.log(
       "\n========== GEMINI LLM REQUEST =========="
     );
@@ -365,25 +372,36 @@ export const getGeminiFunctionCall =
       userId || "NOT PROVIDED"
     );
 
+
     const apiTools =
       await getGeminiApiTools();
+
 
     console.log(
       "Available backend API tools:",
       apiTools.length
     );
 
+
     /*
      * =====================================================
      * DETERMINISTIC CHECK FOR CURRENT USER'S ORDERS
      * =====================================================
      *
-     * Do not allow Gemini to accidentally select
-     * /api/user/me or /api/order for "my orders".
+     * For "my orders" requests we explicitly select
+     * /api/order/me.
+     *
+     * The user ID is NOT passed from Gemini.
+     *
+     * Backend authentication gets the user ID from:
+     *
+     * req.user.id
+     * =====================================================
      */
 
     const normalizedMessage =
       message.toLowerCase().trim();
+
 
     const isMyOrdersRequest =
       normalizedMessage.includes("my orders") ||
@@ -393,42 +411,50 @@ export const getGeminiFunctionCall =
       normalizedMessage.includes("order history") ||
       normalizedMessage.includes("show my recent orders");
 
+
     if (isMyOrdersRequest) {
-
-      if (!userId) {
-        console.error(
-          "Authenticated user ID is missing for user's orders request."
-        );
-
-        throw new Error(
-          "Authenticated user ID is not available."
-        );
-      }
 
       const orderTool =
         apiTools.find(
           (tool) =>
             tool.name ===
-            "get__api_order_getByUserId_userId"
+            "get__api_order_me"
         );
 
+
       if (!orderTool) {
+
+        console.error(
+          "User orders API is not available."
+        );
+
         throw new Error(
           "User orders API is not available."
         );
       }
 
-      const functionCall = {
-        name:
-          "get__api_order_getByUserId_userId",
 
-        args: {
-          userId,
-        },
+      /*
+       * IMPORTANT:
+       *
+       * No userId is passed here.
+       *
+       * The backend /api/order/me endpoint
+       * gets the logged-in user from req.user.id.
+       */
+
+      const functionCall = {
+
+        name:
+          "get__api_order_me",
+
+        args: {},
+
       };
 
+
       console.log(
-        "\n🔒 AUTHENTICATED USER ORDER REQUEST"
+        "\n🔒 CURRENT USER ORDER REQUEST"
       );
 
       console.log(
@@ -438,7 +464,7 @@ export const getGeminiFunctionCall =
 
       console.log(
         "Authenticated userId:",
-        userId
+        userId || "NOT PROVIDED"
       );
 
       console.log(
@@ -447,15 +473,20 @@ export const getGeminiFunctionCall =
       );
 
       console.log(
-        "Arguments:",
-        functionCall.args
+        "Arguments: {}"
+      );
+
+      console.log(
+        "User ID will be resolved by backend authentication."
       );
 
       console.log(
         "========================================\n"
       );
 
+
       return {
+
         functionCall,
 
         functionCallPart: {
@@ -466,8 +497,10 @@ export const getGeminiFunctionCall =
           orderTool,
 
         response: null,
+
       };
     }
+
 
     /*
      * =====================================================
@@ -481,6 +514,7 @@ export const getGeminiFunctionCall =
     const functionDeclarations =
       apiTools.map(
         (tool) => ({
+
           name:
             tool.name,
 
@@ -489,11 +523,14 @@ export const getGeminiFunctionCall =
 
           parameters:
             tool.parameters,
+
         })
       );
 
+
     const response =
       await generateWithRetry({
+
         model:
           "gemini-3.5-flash-lite",
 
@@ -505,26 +542,33 @@ Select the correct backend API based on the user's request.
 IMPORTANT API SELECTION RULES:
 
 1. For requests about the CURRENT LOGGED-IN USER'S ORDERS, use:
-   get__api_order_getByUserId_userId
+   get__api_order_me
 
 2. NEVER use:
-   get__api_order
+   get__api_order_getByUserId_userId
 
    for requests about the current user's orders.
 
 3. NEVER use:
+   get__api_order
+
+   for requests about the current user's orders.
+
+4. NEVER use:
    get__api_user_me
 
    for order-related requests.
 
-4. get__api_user_me is only for profile/account information.
+5. get__api_user_me is only for profile/account information.
 
-5. Do not invent or guess user IDs.
+6. Do not invent or guess user IDs.
 
-6. For requests about the user's orders, the authenticated
-   user ID is handled by the application.
+7. For current user's orders, the authenticated user
+   is identified by the backend authentication system.
 
-7. For profile/account requests, use:
+8. Do not pass a user ID for /api/order/me.
+
+9. For profile/account requests, use:
    get__api_user_me
 
 User message:
@@ -533,6 +577,7 @@ ${message}
 `,
 
         config: {
+
           tools: [
             {
               functionDeclarations,
@@ -540,12 +585,17 @@ ${message}
           ],
 
           toolConfig: {
+
             functionCallingConfig: {
               mode: "AUTO",
             },
+
           },
+
         },
+
       });
+
 
     const parts =
       response
@@ -553,11 +603,13 @@ ${message}
         ?.content
         ?.parts || [];
 
+
     const functionCallPart =
       parts.find(
         (part: any) =>
           part.functionCall
       );
+
 
     if (
       functionCallPart?.functionCall
@@ -566,12 +618,14 @@ ${message}
       const functionCall =
         functionCallPart.functionCall;
 
+
       const selectedTool =
         apiTools.find(
           (tool) =>
             tool.name ===
             functionCall.name
         );
+
 
       console.log(
         "\n🔧 GEMINI SELECTED BACKEND API"
@@ -591,13 +645,20 @@ ${message}
         "========================================\n"
       );
 
+
       return {
+
         functionCall,
+
         functionCallPart,
+
         selectedTool,
+
         response,
+
       };
     }
+
 
     /*
      * =====================================================
@@ -611,9 +672,11 @@ ${message}
           part.text
       );
 
+
     const initialResponse =
       textPart?.text?.trim() ||
       "I could not generate a response.";
+
 
     console.log(
       "\n🧠 GEMINI ANSWERED DIRECTLY"
@@ -623,24 +686,35 @@ ${message}
       "No backend API was selected."
     );
 
+
     const directResponse =
       await generateDirectUserResponse(
         message,
         initialResponse
       );
 
+
     console.log(
       "========================================\n"
     );
 
+
     return {
+
       functionCall: null,
+
       functionCallPart: null,
+
       selectedTool: null,
+
       response,
+
       directResponse,
+
     };
+
   };
+
 
 /*
  * ==================================================
@@ -666,7 +740,7 @@ export const generateNaturalLanguageResponse =
     );
 
 
-    const prompt = `
+   const prompt = `
 You are a helpful Book Rental AI Assistant.
 
 The user asked:
@@ -717,40 +791,51 @@ IMPORTANT RULES:
 
 10. Do NOT expose internal technical information.
 
-11. If the requested information is not available
-    or the user does not have permission to access it,
-    give a short, polite and user-friendly response.
+11. If the user is not signed in and the requested
+    information requires a signed-in account, politely
+    ask the user to sign in.
 
-12. Do not explain technical reasons to the user.
+12. Do not mention:
+    401
+    Unauthorized
+    JWT
+    token
+    authentication middleware
+    API
+    backend
+    endpoint
+    route
 
-13. Do not invent information.
+13. Do not explain technical reasons to the user.
 
-14. If multiple records are returned, present them
+14. Do not invent information.
+
+15. If multiple records are returned, present them
     as a simple numbered list.
 
-15. Keep descriptions concise.
+16. Keep descriptions concise.
 
-16. If a value is unavailable or null,
+17. If a value is unavailable or null,
     do not show it.
 
-17. Use ₹ for prices when the response contains prices.
+18. Use ₹ for prices when the response contains prices.
 
-18. Make the response natural and easy to read
+19. Make the response natural and easy to read
     in a frontend chat interface.
 
-19. Do not use Markdown formatting.
+20. Do not use Markdown formatting.
 
-20. Do not use ** or *.
+21. Do not use ** or *.
 
-21. Do not use # headings.
+22. Do not use # headings.
 
-22. Do not use backticks.
+23. Do not use backticks.
 
-23. Do not use Markdown bullet points.
+24. Do not use Markdown bullet points.
 
-24. Answer directly and naturally.
+25. Answer directly and naturally.
 
-25. Return only the final user-friendly response.
+26. Return only the final user-friendly response.
 `;
 
 
